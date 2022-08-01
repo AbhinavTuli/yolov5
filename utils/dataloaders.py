@@ -75,8 +75,9 @@ def create_dataloader(path,
     batch_size = min(batch_size, len(dataset))
     nd = torch.cuda.device_count()  # number of CUDA devices
     nw = min([os.cpu_count() // max(nd, 1), batch_size if batch_size > 1 else 0, workers])  # number of workers
+    nw = 0
     # sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
-    loader = Loader(dataset, num_workers = nw, batch_size = batch_size, shuffle = False, transform_fn = transform)
+    loader = Loader(dataset, num_workers = nw, batch_size = batch_size, shuffle = False, transform_fn = transform, tensors=["images", "boxes", "categories"], collate_fn=collate_fn)
     return loader, dataset
 
 
@@ -89,17 +90,19 @@ def my_transform(fn, img_size, augment, hyp):
 
 
 def resize_im(im, img_size, augment):
-    h0, w0 = im.shape[:2]  # orig hw
+    h0, w0, c0 = im.shape  # orig hw
     r = img_size / max(h0, w0)  # ratio
     if r != 1:  # if sizes are not equal
         interp = cv2.INTER_LINEAR if (augment or r > 1) else cv2.INTER_AREA
         im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
+    if c0 < 3:
+        im = np.pad(im, ((0, 0), (0, 0), (0, 3 - c0)), "constant")
     return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
 
 
 def transform_sample(sample, img_size, augment, hyp):
     albumentations = Albumentations() if augment else None
-    im = sample["image"]
+    im = sample["images"]
     # Load image
     img, (h0, w0), (h, w) = resize_im(im, img_size, augment)
     shape = img_size
@@ -107,7 +110,11 @@ def transform_sample(sample, img_size, augment, hyp):
     img, ratio, pad = letterbox(img, shape, auto=False, scaleup=augment)
     shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
-    labels = sample["labels"]
+    boxes = sample["boxes"]
+    categories = sample["categories"]
+    labels = np.concatenate((categories[:, np.newaxis], boxes), axis=1)
+
+
     if labels.size:  # normalized xywh to pixel xyxy format
         labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
 
