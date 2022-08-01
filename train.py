@@ -104,11 +104,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     init_seeds(opt.seed + 1 + RANK, deterministic=True)
     with torch_distributed_zero_first(LOCAL_RANK):
         data_dict = data_dict or check_dataset(data)  # check if None
-    train_path, val_path = data_dict['train'], data_dict['val']
-    nc = 1 if single_cls else int(data_dict['nc'])  # number of classes
-    names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
-    assert len(names) == nc, f'{len(names)} names found for nc={nc} dataset in {data}'  # check
-    is_coco = isinstance(val_path, str) and val_path.endswith('coco/val2017.txt')  # COCO dataset
+    train_path, val_path = "hub://activeloop/coco-train", "hub://activeloop/coco-val"
+    nc = 1 if single_cls else 91
+    is_coco = True
 
     # Model
     check_suffix(weights, '.pt')  # check weights
@@ -204,9 +202,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                               rank=LOCAL_RANK,
                                               workers=workers,
                                               shuffle=True)
-    mlc = int(np.concatenate(dataset.labels, 0)[:, 0].max())  # max label class
-    nb = len(train_loader)  # number of batches
-    assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
+    # mlc = int(np.concatenate(dataset.labels, 0)[:, 0].max())  # max label class
+    nb = len(dataset)  # number of batches
+    # assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
 
     # Process 0
     if RANK in {-1, 0}:
@@ -219,16 +217,16 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                        )[0]
 
         if not resume:
-            labels = np.concatenate(dataset.labels, 0)
+            # labels = np.concatenate(dataset.labels, 0)
             # c = torch.tensor(labels[:, 0])  # classes
             # cf = torch.bincount(c.long(), minlength=nc) + 1.  # frequency
             # model._initialize_biases(cf.to(device))
-            if plots:
-                plot_labels(labels, names, save_dir)
+            # if plots:
+            #     plot_labels(labels, names, save_dir)
 
             # Anchors
-            if not opt.noautoanchor:
-                check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
+            # if not opt.noautoanchor:
+            #     check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
             model.half().float()  # pre-reduce anchor precision
 
         callbacks.run('on_pretrain_routine_end')
@@ -245,8 +243,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     hyp['label_smoothing'] = opt.label_smoothing
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
-    model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
-    model.names = names
+    model.class_weights = labels_to_class_weights(nc).to(device) * nc  # attach class weights
+    # model.names = names
 
     # Start training
     t0 = time.time()
